@@ -2,69 +2,82 @@ import numpy as np
 from collections import namedtuple
 from PIL import Image
 from tqdm import tqdm
-import struct
-
+import matplotlib.pyplot as plt
 
 COLORS = [
-    [0,0,0],
-    [255,0,0],
-    [0,255,0],
-    [0,0,255],
-    [255,255,0],
-    [0,255,255],
-    [255,0,255]
+    [0, 0, 0],
+    [255, 0, 0],
+    [0, 255, 0],
+    [0, 0, 255],
+    [255, 255, 0],
+    [0, 255, 255],
+    [255, 0, 255]
 ]
 
-def rgb_to_int(rgb):
-    return int.from_bytes(struct.pack('BBB', *rgb), "little")
+# RGB stuff from https://stackoverflow.com/questions/4801366/convert-rgb-values-to-integer/4801397
+def rgb_to_int(r, g, b): return (((r & 0x0ff) << 16) | ((g & 0x0ff) << 8) | (b & 0x0ff))*256+255
+def get_red(rgb): return (rgb >> 16) & 0x0ff
+def get_green(rgb): return (rgb >> 8) & 0x0ff
+def get_blue(rgb): return rgb & 0x0ff
 
-COLORS = [rgb_to_int(i) for i in COLORS]
+COLORS = [rgb_to_int(*i) for i in COLORS]
 
 def byte_to_color(i):
     return COLORS[i]
 
+def byte_to_im_array(arr):
+    im_arr = np.vectorize(byte_to_color)(arr)
+    r = np.vectorize(get_red)(im_arr)
+    g = np.vectorize(get_green)(im_arr)
+    b = np.vectorize(get_blue)(im_arr)
+    return np.dstack((r,g,b)).astype(np.uint8)
 
 
-class Grid: 
+class Grid:
     def __init__(self, size, pad_size=None):
         if size % 2 != 1:
             raise ValueError("size must be odd!")
         # board is a numpy array where the center of the array represents the origin of \mathbb{Z}^2
-        self.board = np.zeros((size,size)).astype(np.uint8)
+        self.board = np.zeros((size, size)).astype(np.uint8)
         self.center = ((size-1)//2, (size-1)//2)
         self.pad_size = pad_size
+
     def __getitem__(self, key):
         try:
-            dx,dy = key
-            x,y = self.center
-            if min(x+dx, y+dy) < 0: raise ValueError()
+            dx, dy = key
+            x, y = self.center
+            if min(x+dx, y+dy) < 0:
+                raise ValueError()
             return self.board[(x+dx, y+dy)]
-        except IndexError: # coord too positive
+        except IndexError:  # coord too positive
             self.pad(key)
             return self.__getitem__(key)
-        except ValueError: # coord too negative
-            x1,y1 = self.center
-            x2,y2 = key
+        except ValueError:  # coord too negative
+            x1, y1 = self.center
+            x2, y2 = key
             pad_pt = (2*x1-x2, 2*y1-y2)
             self.pad(pad_pt)
             return self.__getitem__(key)
+
     def __setitem__(self, key, value):
         try:
             dx, dy = key
-            x,y = self.center
-            if min(x+dx, y+dy) < 0: raise ValueError()
+            x, y = self.center
+            if min(x+dx, y+dy) < 0:
+                raise ValueError()
             self.board[(x+dx, y+dy)] = value
-        except IndexError: # coord too big
+        except IndexError:  # coord too big
             self.pad(key)
             self.__setitem__(key, value)
-        except ValueError: # coord too small
-            x1,y1 = self.center
-            x2,y2 = key
+        except ValueError:  # coord too small
+            x1, y1 = self.center
+            x2, y2 = key
             pad_pt = (2*x1-x2, 2*y1-y2)
             self.pad(pad_pt)
             return self.__setitem__(key)
-    def pad(self, invalid_pos, size = None):
-        x,y = self.center
+
+    def pad(self, invalid_pos, size=None):
+        x, y = self.center
         dx, dy = invalid_pos
         if size:
             self.board = np.pad(self.board, size)
@@ -72,22 +85,27 @@ class Grid:
             self.board = np.pad(self.board, self.pad_size)
         else:
             new_arr_size = max(x+dx, y+dy)+1
-            if new_arr_size % 2 == 0: new_arr_size += 1
+            if new_arr_size % 2 == 0:
+                new_arr_size += 1
             size_delta = abs(new_arr_size - len(self.board))
             self.board = np.pad(self.board, size_delta//2)
         print(self.board.shape)
         self.center = ((len(self.board)-1)//2, (len(self.board)-1)//2)
 
+
 class Ant:
     def __init__(self):
-        self.pos = (0,0) # Cartesian coordinate
-        self.heading = 0 # 0 for North, 1 for East, 2 for South, 3 for West
+        self.pos = (0, 0)  # Cartesian coordinate
+        self.heading = 0  # 0 for North, 1 for East, 2 for South, 3 for West
+
     def step(self):
-        x,y = self.pos
-        self.pos = [(x,y+1), (x+1,y), (x,y-1), (x-1,y)][self.heading]
+        x, y = self.pos
+        self.pos = [(x, y+1), (x+1, y), (x, y-1), (x-1, y)][self.heading]
+
     def turn(self, amount):
         self.heading += amount
         self.heading %= 4
+
 
 # Code to run normal Langton's ant (2 colors)
 """
@@ -119,13 +137,16 @@ for i in tqdm(range(N)):
     board[ant.pos] %= len(rule)
 """
 
-x = np.array([0,1,2,3,4,5,6])
-x = np.vstack([[x]*100])
 
-im_array = np.vectorize(byte_to_color)(x).astype(np.ulonglong)
-print(im_array)
-
-im = Image.fromarray(im_array, "RGB")
-im.save('out.jpeg')
-
-print(x)
+x = np.array(range(6))
+x = np.vstack([x]*100)
+im_arr = np.vectorize(byte_to_color)(x).astype(np.uint8)
+im = Image.fromarray(im_arr)
+im.save("out.jpeg")
+"""
+print(byte_to_im_array(x))
+im = Image.fromarray(byte_to_im_array(x), "RGB")
+im.save("out.jpeg")
+plt.imshow(byte_to_im_array(x))
+plt.show()
+"""
